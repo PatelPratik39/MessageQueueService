@@ -38,11 +38,11 @@ amqp.connect(process.env.RABBITMQ_URL, (error0, connection) => {
       const message = req.body.message;
 
       channel.sendToQueue(queue, Buffer.from(message), {
-        persistent: true,
+        persistent: true
       });
 
       console.log(" [x] Sent '%s'", message);
-      res.status(200).send("Message sent: " + message);
+      res.status(200).json({ message: `Message sent: ${message}` });
     });
 
   });

@@ -1,40 +1,68 @@
+const { MongoClient } = require("mongodb");
 const amqp = require("amqplib/callback_api");
 require("dotenv").config();
 
+const url = 'mongodb://localhost:27017'; // MongoDB URL
+const dbName = 'MessageQueueService'; // Database name
+const collectionName = 'MessageQueueService'; // Collection name
+const RABBITMQ_URL = process.env.RABBITMQ_URL;
 
-// Use environment variables
-const rabbitmqUrl =
-  process.env.RABBITMQ_URL || "amqp://Prats_RabbitMQ:admin123@localhost:5672";
+let collection;
 
-amqp.connect(rabbitmqUrl, (error0, connection) => {
-  if (error0) {
-    throw error0;
-  }
+MongoClient.connect(url, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then((client) => {
+    console.log("Connected successfully to MongoDB");
+    const db = client.db(dbName);
+    collection = db.collection(collectionName);
 
-  connection.createChannel((error1, channel) => {
-    if (error1) {
-      throw error1;
-    }
-
-    const queue = "tast_queue";
-
-    channel.assertQueue(queue, {
-      durable: true
-    });
-
-    console.log(" [*] Waiting for messages in %s. To exit press CTRL+C", queue);
-
-    channel.consume(
-      queue,
-      (msg) => {
-        if (msg !== null) {
-          console.log(" [x] Received '%s'", msg.content.toString());
-          channel.ack(msg);
-        }
-      },
-      {
-        noAck: false
-      }
-    );
+    // Now start the RabbitMQ consumer after establishing MongoDB connection
+    startRabbitMQConsumer();
+  })
+  .catch((err) => {
+    console.error("Failed to connect to MongoDB", err);
   });
-});
+
+function startRabbitMQConsumer() {
+  amqp.connect(RABBITMQ_URL, (error0, connection) => {
+    if (error0) {
+      throw error0;
+    }
+    connection.createChannel((error1, channel) => {
+      if (error1) {
+        throw error1;
+      }
+
+      const queue = "task_queue";
+
+      channel.assertQueue(queue, {
+        durable: true
+      });
+
+      channel.consume(
+        queue,
+        (msg) => {
+          if (msg !== null) {
+            console.log("Received:", msg.content.toString());
+
+            // Insert message into MongoDB
+            collection.insertOne(
+              { message: msg.content.toString() },
+              (err, result) => {
+                if (err) {
+                  console.error("Failed to insert message into MongoDB", err);
+                } else {
+                  console.log("Message inserted into MongoDB:", result.ops);
+                }
+              }
+            );
+
+            channel.ack(msg);
+          }
+        },
+        {
+          noAck: false
+        }
+      );
+    });
+  });
+}
